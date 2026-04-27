@@ -102,8 +102,9 @@ router.post("/join", async (req, res) => {
       return res.status(400).json({ msg: "Student not in class list" });
     }
 
+
     let student = session.students.find(
-      (s) => s.studentId === studentId
+      (s) => String(s.studentId) === String(studentId)
     );
 
     if (!student) {
@@ -115,6 +116,11 @@ router.post("/join", async (req, res) => {
         lastSeen: new Date(),
         active: true,
       });
+    } else {
+      // 🔥 update existing
+      student.joinedAt = new Date();
+      student.lastSeen = new Date();
+      student.active = true;
     }
 
     await session.save();
@@ -134,8 +140,12 @@ router.post("/heartbeat", async (req, res) => {
   try {
     const { sessionId, studentId, studentIP } = req.body;
 
-    if (!sessionId || !studentId || !studentIP) {
-      return res.status(400).json({ msg: "Missing fields" });
+    // 🔍 Debug log (very useful)
+    console.log("HEARTBEAT:", { sessionId, studentId, studentIP });
+
+    // ✅ Basic validation
+    if (!sessionId || !studentId) {
+      return res.status(400).json({ msg: "Missing sessionId or studentId" });
     }
 
     const session = await AttendanceSession.findOne({ sessionId });
@@ -144,22 +154,30 @@ router.post("/heartbeat", async (req, res) => {
       return res.status(404).json({ msg: "Session not found" });
     }
 
+    // 🔥 FIXED: ObjectId comparison
     const student = session.students.find(
-      (s) => s.studentId === studentId
+      (s) => String(s.studentId) === String(studentId)
     );
 
     if (!student) {
       return res.status(404).json({ msg: "Student not in session" });
     }
 
-    const sameNetwork = isSameNetwork(
-      session.teacherIP,
-      studentIP
-    );
+    // ✅ If IP is provided → check network
+    if (studentIP) {
+      const sameNetwork = isSameNetwork(
+        session.teacherIP,
+        studentIP
+      );
 
-    if (!sameNetwork) {
-      student.active = false;
+      if (!sameNetwork) {
+        student.active = false;
+      } else {
+        student.lastSeen = new Date();
+        student.active = true;
+      }
     } else {
+      // ⚠️ fallback (if IP not available)
       student.lastSeen = new Date();
       student.active = true;
     }
@@ -169,8 +187,10 @@ router.post("/heartbeat", async (req, res) => {
     res.json({ msg: "Heartbeat received" });
 
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ msg: "Heartbeat error" });
+    console.log("HEARTBEAT ERROR:", err);
+    res.status(500).json({
+      msg: err.message || "Heartbeat error",
+    });
   }
 });
 
