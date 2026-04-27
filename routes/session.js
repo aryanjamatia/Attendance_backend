@@ -15,6 +15,12 @@ const getClientIP = (req) => {
 function isSameNetwork(ip1, ip2) {
   if (!ip1 || !ip2) return false;
 
+  // ignore IPv6
+  if (ip1.includes(":") || ip2.includes(":")) {
+    console.log("IPv6 detected, skipping strict check");
+    return true; // or return false based on your rule
+  }
+
   const net1 = ip1.split(".").slice(0, 3).join(".");
   const net2 = ip2.split(".").slice(0, 3).join(".");
 
@@ -62,9 +68,9 @@ router.post("/start", async (req, res) => {
 
 router.post("/join", async (req, res) => {
   try {
-    const { sessionId, studentId, name, rollNo, studentIP } = req.body;
+    const { sessionId, studentId, name, rollNo } = req.body;
 
-    if (!sessionId || !studentId || !name || !rollNo || !studentIP) {
+    if (!sessionId || !studentId || !name || !rollNo) {
       return res.status(400).json({ msg: "Missing fields" });
     }
 
@@ -80,10 +86,15 @@ router.post("/join", async (req, res) => {
     }
 
     // ✅ IP CHECK (MAIN LOGIC)
-    const sameNetwork = isSameNetwork(
-      session.teacherIP,
-      studentIP
-    );
+const studentIP = getClientIP(req);
+
+console.log("Teacher IP:", session.teacherIP);
+console.log("Student IP:", studentIP);
+
+const sameNetwork = isSameNetwork(
+  session.teacherIP,
+  studentIP
+);
 
     if (!sameNetwork) {
       return res.status(403).json({
@@ -138,12 +149,12 @@ router.post("/join", async (req, res) => {
 ========================================= */
 router.post("/heartbeat", async (req, res) => {
   try {
-    const { sessionId, studentId, studentIP } = req.body;
+    const { sessionId, studentId } = req.body;
 
-    // 🔍 Debug log (very useful)
+    const studentIP = getClientIP(req);
+
     console.log("HEARTBEAT:", { sessionId, studentId, studentIP });
 
-    // ✅ Basic validation
     if (!sessionId || !studentId) {
       return res.status(400).json({ msg: "Missing sessionId or studentId" });
     }
@@ -154,7 +165,6 @@ router.post("/heartbeat", async (req, res) => {
       return res.status(404).json({ msg: "Session not found" });
     }
 
-    // 🔥 FIXED: ObjectId comparison
     const student = session.students.find(
       (s) => String(s.studentId) === String(studentId)
     );
@@ -163,21 +173,14 @@ router.post("/heartbeat", async (req, res) => {
       return res.status(404).json({ msg: "Student not in session" });
     }
 
-    // ✅ If IP is provided → check network
-    if (studentIP) {
-      const sameNetwork = isSameNetwork(
-        session.teacherIP,
-        studentIP
-      );
+    const sameNetwork = isSameNetwork(
+      session.teacherIP,
+      studentIP
+    );
 
-      if (!sameNetwork) {
-        student.active = false;
-      } else {
-        student.lastSeen = new Date();
-        student.active = true;
-      }
+    if (!sameNetwork) {
+      student.active = false;
     } else {
-      // ⚠️ fallback (if IP not available)
       student.lastSeen = new Date();
       student.active = true;
     }
@@ -337,7 +340,7 @@ router.get("/class/:classId/history", async (req, res) => {
 
 router.post("/mark", async (req, res) => {
   try {
-    const { sessionId, studentId, studentIP } = req.body;
+    const { sessionId, studentId } = req.body;
 
     const session = await AttendanceSession.findOne({ sessionId });
 
@@ -350,10 +353,12 @@ router.post("/mark", async (req, res) => {
       return res.status(400).json({ message: "Session expired" });
     }
 
-    const sameNetwork = isSameNetwork(
-      session.teacherIP,
-      studentIP
-    );
+const studentIP = getClientIP(req);
+
+const sameNetwork = isSameNetwork(
+  session.teacherIP,
+  studentIP
+);
 
     if (!sameNetwork) {
       return res.status(403).json({
